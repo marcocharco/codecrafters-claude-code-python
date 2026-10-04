@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import json
 
 from openai import OpenAI
 
@@ -16,9 +17,9 @@ BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v
 MODEL = os.getenv("MODEL", default="anthropic/claude-haiku-4.5")
 
 def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("-p", required=True)
-    args = p.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", required=True)
+    args = parser.parse_args()
 
     read_file = {
         "type": "function",
@@ -55,8 +56,15 @@ def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    print(chat.choices[0].message.content)
-
+    if not chat.choices[0].message.tool_calls:
+        print(chat.choices[0].message.content)
+    else:
+        tool = chat.choices[0].message.tool_calls[0]
+        if tool.function.name == "Read":
+            tool_args = json.loads(tool.function.arguments)
+            with open(tool_args["file_path"], "r", encoding="utf-8") as file:
+                file_content = file.read()
+                print(file_content)
 
 if __name__ == "__main__":
     main()
