@@ -2,6 +2,8 @@ import argparse
 import os
 import sys
 import json
+import subprocess
+import shlex
 
 from openai import OpenAI
 
@@ -61,6 +63,26 @@ def main():
         }
     }
 
+    bash = {
+        "type": "function",
+        "function": {
+            "name": "Bash",
+            "description": "Execute a shell command",
+            "parameters": {
+                "type": "object",
+                "required": [
+                    "command"
+                ],
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The command to execute"
+                    }
+                }
+            }
+        }
+    }
+
     if not API_KEY:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
@@ -76,7 +98,7 @@ def main():
         chat = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            tools=[read, write]
+            tools=[read, write, bash]
         )
 
         if not chat.choices or len(chat.choices) == 0:
@@ -103,6 +125,11 @@ def main():
                     file.write(tool_args["content"])
 
                 messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : "Successfully written to file"})
+
+            elif tool.function.name == "Bash":
+                result = subprocess.run(shlex.split(tool_args["command"]), capture_output = True, text = True)
+
+                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : (result.stdout + result.stderr)})
 
 if __name__ == "__main__":
     main()
