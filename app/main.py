@@ -39,6 +39,28 @@ def main():
         }
     }
 
+    write = {
+        "type": "function",
+        "function": {
+            "name": "Write",
+            "description": "Write content to a file",
+            "parameters": {
+                "type": "object",
+                "required": ["file_path", "content"],
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path of the file to write to"
+                    },
+                "content": {
+                    "type": "string",
+                    "description": "The content to write to the file"
+                    }
+                }
+            }
+        }
+    }
+
     if not API_KEY:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
 
@@ -54,7 +76,7 @@ def main():
         chat = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            tools=[read_file]
+            tools=[read_file, write]
         )
 
         if not chat.choices or len(chat.choices) == 0:
@@ -75,12 +97,13 @@ def main():
                     file_content = file.read()
                 
                 messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : file_content})
-            else:
-                pass
 
+            elif tool.function.name == "Write":
+                tool_args = json.loads(tool.function.arguments)
+                with open(tool_args["file_path"], "w", encoding="utf-8") as file:
+                    file.write(tool_args["content"])
 
-
-
+                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : tool_args["content"]})
 
 if __name__ == "__main__":
     main()
