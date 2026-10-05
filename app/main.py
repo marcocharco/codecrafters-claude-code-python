@@ -44,6 +44,8 @@ def main():
 
     client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
+    # You can use print statements as follows for debugging, they'll be visible when running tests.
+    print("Logs from your program will appear here!", file=sys.stderr)
 
     messages=[{"role": "user", "content": args.p}]
 
@@ -58,12 +60,15 @@ def main():
         if not chat.choices or len(chat.choices) == 0:
             raise RuntimeError("no choices in response")
 
-        if not chat.choices[0].message.tool_calls:
-            print(chat.choices[0].message.content)
+        message = chat.choices[0].message
+
+        if not message.tool_calls:
+            print(message.content)
+            break
         
-        messages.append(chat.choises[0].message)
+        messages.append(message)
         
-        for tool in chat.choises[0].message.tool_calls:
+        for tool in message.tool_calls:
             if tool.function.name == "Read":
                 tool_args = json.loads(tool.function.arguments)
                 with open(tool_args["file_path"], "r", encoding="utf-8") as file:
@@ -75,8 +80,6 @@ def main():
 
 
 
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
-    print("Logs from your program will appear here!", file=sys.stderr)
 
 
 if __name__ == "__main__":
