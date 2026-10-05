@@ -21,7 +21,7 @@ def main():
     parser.add_argument("-p", required=True)
     args = parser.parse_args()
 
-    read_file = {
+    read = {
         "type": "function",
         "function": {
             "name": "Read",
@@ -76,7 +76,7 @@ def main():
         chat = client.chat.completions.create(
             model=MODEL,
             messages=messages,
-            tools=[read_file, write]
+            tools=[read, write]
         )
 
         if not chat.choices or len(chat.choices) == 0:
@@ -91,19 +91,18 @@ def main():
         messages.append(message)
         
         for tool in message.tool_calls:
+            tool_args = json.loads(tool.function.arguments)
             if tool.function.name == "Read":
-                tool_args = json.loads(tool.function.arguments)
                 with open(tool_args["file_path"], "r", encoding="utf-8") as file:
                     file_content = file.read()
                 
                 messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : file_content})
 
             elif tool.function.name == "Write":
-                tool_args = json.loads(tool.function.arguments)
                 with open(tool_args["file_path"], "w", encoding="utf-8") as file:
                     file.write(tool_args["content"])
 
-                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : tool_args["content"]})
+                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : "Successfully written to file"})
 
 if __name__ == "__main__":
     main()
