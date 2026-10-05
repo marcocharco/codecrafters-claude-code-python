@@ -44,27 +44,40 @@ def main():
 
     client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
-    chat = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": args.p}],
-        tools=[read_file]
-    )
 
-    if not chat.choices or len(chat.choices) == 0:
-        raise RuntimeError("no choices in response")
+    messages=[{"role": "user", "content": args.p}]
+
+    # Agent Loop
+    while True:
+        chat = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            tools=[read_file]
+        )
+
+        if not chat.choices or len(chat.choices) == 0:
+            raise RuntimeError("no choices in response")
+
+        if not chat.choices[0].message.tool_calls:
+            print(chat.choices[0].message.content)
+        
+        messages.append(chat.choises[0].message)
+        
+        for tool in chat.choises[0].message.tool_calls:
+            if tool.function.name == "Read":
+                tool_args = json.loads(tool.function.arguments)
+                with open(tool_args["file_path"], "r", encoding="utf-8") as file:
+                    file_content = file.read()
+                
+                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : file_content})
+            else:
+                pass
+
+
 
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    if not chat.choices[0].message.tool_calls:
-        print(chat.choices[0].message.content)
-    else:
-        tool = chat.choices[0].message.tool_calls[0]
-        if tool.function.name == "Read":
-            tool_args = json.loads(tool.function.arguments)
-            with open(tool_args["file_path"], "r", encoding="utf-8") as file:
-                file_content = file.read()
-                print(file_content)
 
 if __name__ == "__main__":
     main()
