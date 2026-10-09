@@ -5,10 +5,12 @@ import json
 import subprocess
 import shlex
 
+from pathlib import Path
 from openai import OpenAI
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -17,6 +19,7 @@ API_KEY = os.getenv("OPENROUTER_API_KEY")
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
 
 MODEL = os.getenv("MODEL", default="anthropic/claude-haiku-4.5")
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -33,12 +36,12 @@ def main():
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "The path to the file to read"
+                        "description": "The path to the file to read",
                     }
                 },
-                "required": ["file_path"]
-            }
-        }
+                "required": ["file_path"],
+            },
+        },
     }
 
     write = {
@@ -52,15 +55,15 @@ def main():
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "The path of the file to write to"
+                        "description": "The path of the file to write to",
                     },
-                "content": {
-                    "type": "string",
-                    "description": "The content to write to the file"
-                    }
-                }
-            }
-        }
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write to the file",
+                    },
+                },
+            },
+        },
     }
 
     bash = {
@@ -70,17 +73,15 @@ def main():
             "description": "Execute a shell command",
             "parameters": {
                 "type": "object",
-                "required": [
-                    "command"
-                ],
+                "required": ["command"],
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "The command to execute"
+                        "description": "The command to execute",
                     }
-                }
-            }
-        }
+                },
+            },
+        },
     }
 
     if not API_KEY:
@@ -91,14 +92,39 @@ def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    messages=[{"role": "user", "content": args.p}]
+    messages = [
+        {"role": "user", "content": args.p},
+    ]
+
+    system_prompt = "You have access to the following skills:\n"
+
+    skills_dir = Path(".claude/skills")
+    if skills_dir.exists():
+        for dir in skills_dir.iterdir():
+            if dir.is_dir():
+                skill_path = dir / "SKILL.md"
+                skill_content = skill_path.read_text(encoding="utf-8")
+                # print(skill_content, file=sys.stderr)
+
+                frontmatter_raw = skill_content.split("---")[1]
+                frontmatter_lines = frontmatter_raw.splitlines()
+
+                frontmatter = {}
+                for line in frontmatter_lines:
+                    if not line:
+                        continue
+                    print(line, file=sys.stderr)
+                    parts = line.split(":", 1)
+                    frontmatter[parts[0].strip()] = parts[1].strip()
+                system_prompt += (
+                    f"- {frontmatter['name']}: {frontmatter['description']}\n"
+                )
+        messages = [{"role": "system", "content": system_prompt}] + messages
 
     # Agent Loop
     while True:
         chat = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            tools=[read, write, bash]
+            model=MODEL, messages=messages, tools=[read, write, bash]
         )
 
         if not chat.choices or len(chat.choices) == 0:
@@ -109,27 +135,44 @@ def main():
         if not message.tool_calls:
             print(message.content)
             break
-        
+
         messages.append(message)
-        
+
         for tool in message.tool_calls:
             tool_args = json.loads(tool.function.arguments)
             if tool.function.name == "Read":
                 with open(tool_args["file_path"], "r", encoding="utf-8") as file:
                     file_content = file.read()
-                
-                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : file_content})
+
+                messages.append(
+                    {"role": "tool", "tool_call_id": tool.id, "content": file_content}
+                )
 
             elif tool.function.name == "Write":
                 with open(tool_args["file_path"], "w", encoding="utf-8") as file:
                     file.write(tool_args["content"])
 
-                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : "Successfully written to file"})
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool.id,
+                        "content": "Successfully written to file",
+                    }
+                )
 
             elif tool.function.name == "Bash":
-                result = subprocess.run(shlex.split(tool_args["command"]), capture_output = True, text = True)
+                result = subprocess.run(
+                    shlex.split(tool_args["command"]), capture_output=True, text=True
+                )
 
-                messages.append({"role" : "tool", "tool_call_id" : tool.id, "content" : (result.stdout + result.stderr)})
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool.id,
+                        "content": (result.stdout + result.stderr),
+                    }
+                )
+
 
 if __name__ == "__main__":
     main()
