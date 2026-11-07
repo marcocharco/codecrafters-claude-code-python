@@ -4,8 +4,9 @@ import sys
 import json
 import subprocess
 import shlex
-
 from pathlib import Path
+
+from app.utils import bash, get_tools, read_file, write_file
 from openai import OpenAI
 
 try:
@@ -25,64 +26,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", required=True)
     args = parser.parse_args()
-
-    read = {
-        "type": "function",
-        "function": {
-            "name": "Read",
-            "description": "Read and return the contents of a file",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "The path to the file to read",
-                    }
-                },
-                "required": ["file_path"],
-            },
-        },
-    }
-
-    write = {
-        "type": "function",
-        "function": {
-            "name": "Write",
-            "description": "Write content to a file",
-            "parameters": {
-                "type": "object",
-                "required": ["file_path", "content"],
-                "properties": {
-                    "file_path": {
-                        "type": "string",
-                        "description": "The path of the file to write to",
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "The content to write to the file",
-                    },
-                },
-            },
-        },
-    }
-
-    bash = {
-        "type": "function",
-        "function": {
-            "name": "Bash",
-            "description": "Execute a shell command",
-            "parameters": {
-                "type": "object",
-                "required": ["command"],
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The command to execute",
-                    }
-                },
-            },
-        },
-    }
 
     if not API_KEY:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
@@ -124,7 +67,7 @@ def main():
     # Agent Loop
     while True:
         chat = client.chat.completions.create(
-            model=MODEL, messages=messages, tools=[read, write, bash]
+            model=MODEL, messages=messages, tools=get_tools()
         )
 
         if not chat.choices or len(chat.choices) == 0:
@@ -140,38 +83,19 @@ def main():
 
         for tool in message.tool_calls:
             tool_args = json.loads(tool.function.arguments)
+            tool_message = {"role": "tool", "tool_call_id": tool.id, "content": ""}
             if tool.function.name == "Read":
-                with open(tool_args["file_path"], "r", encoding="utf-8") as file:
-                    file_content = file.read()
-
-                messages.append(
-                    {"role": "tool", "tool_call_id": tool.id, "content": file_content}
-                )
+                tool_message["content"] = read_file(tool_args["file_path"])
 
             elif tool.function.name == "Write":
-                with open(tool_args["file_path"], "w", encoding="utf-8") as file:
-                    file.write(tool_args["content"])
-
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool.id,
-                        "content": "Successfully written to file",
-                    }
+                tool_message["content"] = write_file(
+                    tool_args["file_path"], tool_args["content"]
                 )
 
             elif tool.function.name == "Bash":
-                result = subprocess.run(
-                    shlex.split(tool_args["command"]), capture_output=True, text=True
-                )
+                tool_message["content"] = bash(tool_args["command"])
 
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool.id,
-                        "content": (result.stdout + result.stderr),
-                    }
-                )
+            messages.append(tool_message)
 
 
 if __name__ == "__main__":
