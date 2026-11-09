@@ -1,13 +1,12 @@
 import argparse
+import json
 import os
 import sys
-import json
-import subprocess
-import shlex
 from pathlib import Path
 
-from app.utils import bash, get_tools, read_file, write_file
 from openai import OpenAI
+
+from .utils import bash, get_skill_body, get_skills, get_tools, read_file, write_file
 
 try:
     from dotenv import load_dotenv
@@ -35,39 +34,30 @@ def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    messages = [
-        {"role": "user", "content": args.p},
-    ]
-
+    skills = get_skills(Path(".claude/skills"))
     system_prompt = "You have access to the following skills:\n"
+    for skill in skills:
+        system_prompt += f"- {skill['name']}: {skill['description']}\n"
 
-    skills_dir = Path(".claude/skills")
-    if skills_dir.exists():
-        for dir in skills_dir.iterdir():
-            if dir.is_dir():
-                skill_path = dir / "SKILL.md"
-                skill_content = skill_path.read_text(encoding="utf-8")
-                # print(skill_content, file=sys.stderr)
+    if args.p.startswith("/"):
+        skill_name = args.p.split(" ")[0].strip("/")
+        body = get_skill_body(Path(".claude/skills"), skill_name)
+        user_prompt = body if body else args.p
+    else:
+        user_prompt = args.p
 
-                frontmatter_raw = skill_content.split("---")[1]
-                frontmatter_lines = frontmatter_raw.splitlines()
-
-                frontmatter = {}
-                for line in frontmatter_lines:
-                    if not line:
-                        continue
-                    print(line, file=sys.stderr)
-                    parts = line.split(":", 1)
-                    frontmatter[parts[0].strip()] = parts[1].strip()
-                system_prompt += (
-                    f"- {frontmatter['name']}: {frontmatter['description']}\n"
-                )
-        messages = [{"role": "system", "content": system_prompt}] + messages
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
 
     # Agent Loop
     while True:
         chat = client.chat.completions.create(
-            model=MODEL, messages=messages, tools=get_tools()
+            model=MODEL,
+            messages=messages,
+            tools=get_tools(),
+            max_tokens=4096,
         )
 
         if not chat.choices or len(chat.choices) == 0:
