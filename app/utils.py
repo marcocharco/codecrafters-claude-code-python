@@ -1,11 +1,14 @@
 import os
+import re
 import shlex
 import subprocess
+
 import yaml
+from openai.types.chat import ChatCompletionToolParam
 
 
-def get_tools() -> list[dict]:
-    tools = [
+def get_tools() -> list[ChatCompletionToolParam]:
+    tools: list[ChatCompletionToolParam] = [
         {
             "type": "function",
             "function": {
@@ -87,7 +90,7 @@ def get_skills(skills_dir) -> list[dict]:
     return skills
 
 
-def get_skill_body(skills_dir, skill_name) -> str:
+def render_skill_body(skills_dir, skill_name, arguments) -> str:
     skill_path = skills_dir / skill_name / "SKILL.md"
     if not skill_path.exists():
         return ""
@@ -95,7 +98,16 @@ def get_skill_body(skills_dir, skill_name) -> str:
     skill_content = skill_path.read_text(encoding="utf-8")
     skill_body = skill_content.split("---", 2)[2]
 
-    return skill_body
+    def substitute(match: re.Match) -> str:
+        index = match.group(1) or match.group(2)
+        if index is None:  # bare $ARGUMENTS
+            return " ".join(arguments)
+        if int(index) < len(arguments):
+            return arguments[int(index)]
+        return match.group(0)  # out of range: leave the placeholder as written
+
+    # Matches $ARGUMENTS[n] (group 1), $ARGUMENTS, or $n (group 2) in one pass.
+    return re.sub(r"\$(?:ARGUMENTS(?:\[(\d+)\])?|(\d+))", substitute, skill_body)
 
 
 def read_file(file_path: str) -> str:

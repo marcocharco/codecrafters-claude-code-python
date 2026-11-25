@@ -6,7 +6,14 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from .utils import bash, get_skill_body, get_skills, get_tools, read_file, write_file
+from .utils import (
+    bash,
+    get_skills,
+    get_tools,
+    read_file,
+    render_skill_body,
+    write_file,
+)
 
 try:
     from dotenv import load_dotenv
@@ -19,6 +26,8 @@ API_KEY = os.getenv("OPENROUTER_API_KEY")
 BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
 
 MODEL = os.getenv("MODEL", default="anthropic/claude-haiku-4.5")
+
+SKILLS_PATH = Path(".claude/skills")
 
 
 def main():
@@ -34,15 +43,18 @@ def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!", file=sys.stderr)
 
-    skills = get_skills(Path(".claude/skills"))
+    skills = get_skills(SKILLS_PATH)
     system_prompt = "You have access to the following skills:\n"
     for skill in skills:
         system_prompt += f"- {skill['name']}: {skill['description']}\n"
 
     if args.p.startswith("/"):
-        skill_name = args.p.split(" ")[0].strip("/")
-        body = get_skill_body(Path(".claude/skills"), skill_name)
+        skill_name, *arguments = args.p.split()
+        skill_name = skill_name.strip("/")
+        body = render_skill_body(SKILLS_PATH, skill_name, arguments)
+
         user_prompt = body if body else args.p
+
     else:
         user_prompt = args.p
 
@@ -57,7 +69,7 @@ def main():
             model=MODEL,
             messages=messages,
             tools=get_tools(),
-            max_tokens=4096,
+            max_tokens=2048,
         )
 
         if not chat.choices or len(chat.choices) == 0:
@@ -72,6 +84,8 @@ def main():
         messages.append(message)
 
         for tool in message.tool_calls:
+            if tool.type != "function":
+                continue
             tool_args = json.loads(tool.function.arguments)
             tool_message = {"role": "tool", "tool_call_id": tool.id, "content": ""}
             if tool.function.name == "Read":
